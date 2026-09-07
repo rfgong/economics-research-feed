@@ -34,7 +34,13 @@ Keep this layer lightweight:
 This is an early-warning supplement, not a completeness-critical bibliographic source. Do not report an error merely because an individual researcher page is inaccessible or ambiguous.
 
 SOURCE COVERAGE
-NBER: use NBER's official machine-readable Working Paper metadata as the discovery backbone and filter by issue date to the feed window. Verify only papers selected for the final feed on their individual NBER pages. If the metadata is unavailable, fall back to the official Working Papers listing or New This Week. Report incomplete NBER coverage only if neither official route can establish the week's releases.
+NBER: load `nber_recent.jsonl` and `nber_recent_state.json` from the canonical repository. The cache is generated from NBER's official `ref.tsv` and `abs.tsv` metadata and is the NBER completeness backbone for this feed.
+
+Use the cache only if `refreshed_date_et` is on or after the Monday that ends the feed window. Filter cached `issue_date` to the feed window and screen the complete resulting NBER batch for relevance. The cached title, authors, issue date, DOI, and abstract are sufficient for NBER discovery and description.
+
+Do not attempt direct NBER metadata, Working Papers listing, New This Week, or individual-paper-page fetches as a recovery path; those routes are not reliable in this execution environment. If the cache is missing or stale, report `ERRORS — NBER coverage incomplete; canonical GitHub cache missing or stale` and continue the other source layers.
+
+For an NBER paper that would otherwise be selected, exclude it if a quick title/author check clearly shows that the same manuscript was publicly available before the feed window; do not perform this check for every NBER candidate.
 
 CEPR: use an official CEPR Discussion Paper listing, RSS feed, or date-filtered page to identify the complete set newly released in the window. Verify only papers selected for the final feed on their CEPR pages. If the primary official route fails, try one alternate official CEPR route before reporting incomplete coverage.
 

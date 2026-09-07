@@ -53,6 +53,6 @@
   "notes": [
     "COMPLETE means all 20 institutions have been covered and deduplicated at institution level.",
     "Some records use an official unit faculty page as a URL fallback; resolve to a personal or individual research page when encountered.",
-    "On the first weekly run in September, refresh all institutions and persist after each completed institution."
+    "Annual roster maintenance is handled separately by annual_roster_refresh_prompt.md; the weekly feed does not rebuild the roster."
   ]
 }

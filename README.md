@@ -4,31 +4,39 @@ Persistent support files for the weekly ChatGPT economics research-feed automati
 
 ## Files
 
-- `weekly_feed_prompt.md` — canonical automation instructions.
+- `weekly_feed_prompt.md` — canonical weekly-feed instructions.
+- `annual_roster_refresh_prompt.md` — separate annual roster-maintenance instructions.
 - `top20_economics_researchers.md` — cached Top-20 junior-researcher roster used for researcher-site and work-in-progress scans.
-- `top20_roster_state.json` — machine-readable refresh status and checkpoint metadata.
+- `top20_roster_state.json` — machine-readable roster refresh status.
+- `nber_recent.jsonl` — generated compact cache of recent NBER Working Paper metadata and abstracts.
+- `nber_recent_state.json` — generated NBER cache status.
+- `.github/workflows/refresh_nber_cache.yml` — refreshes the NBER cache before the Monday feed.
 
-## Automation contract
-
-The scheduled feed should treat this repository as the canonical persistent store for the researcher roster.
+## Weekly automation contract
 
 On ordinary weekly runs:
 
 1. Read `weekly_feed_prompt.md`.
-2. Read `top20_roster_state.json`.
-3. If the roster state is `COMPLETE`, use `top20_economics_researchers.md` for the researcher-website scan.
-4. Repair obvious dead or redirected research URLs when encountered and persist the correction when repository writes are available.
+2. Load the current NBER cache and roster files named there.
+3. Use the cached NBER file as the NBER completeness backbone.
+4. Use the cached researcher roster for the lightweight researcher-website/WIP scan.
+5. Do not rebuild or re-audit the roster during the weekly feed.
 
-On the first weekly run in September:
+If the NBER cache is missing or stale, report incomplete NBER coverage and continue the other source layers. Do not substitute direct NBER fetch routes that are known to be unreliable in the ChatGPT execution environment.
 
-1. Refresh all 20 institutions using the inclusion rules in `weekly_feed_prompt.md`.
-2. Persist the roster and state after each completed institution.
-3. Keep state `INCOMPLETE` until all 20 institutions are finished.
-4. Set state to `COMPLETE` only after the full roster has been refreshed and deduplicated.
+If the researcher roster is unavailable, continue the NBER, CEPR, and arXiv layers and report that the researcher-website/WIP layer could not run.
 
-If repository access is unavailable, the automation should still run the NBER, CEPR, and arXiv layers and report that the researcher-website/WIP layer could not run.
+## NBER cache
 
-## Scope
+The GitHub Actions workflow downloads NBER's public machine-readable `ref.tsv` and `abs.tsv`, validates the response, and writes a compact 14-day cache containing Working Paper number, authors, title, issue date, DOI, and abstract.
+
+The workflow runs early Monday before the 08:00 America/New_York feed and may also be triggered manually. A failed download or validation stops the workflow before the previous cache is overwritten.
+
+The generated cache is source infrastructure, not a weekly feed output.
+
+## Roster maintenance
+
+Roster maintenance is separate from the weekly feed. Use `annual_roster_refresh_prompt.md` for the annual refresh.
 
 The roster covers junior permanent or tenure-track economics researchers at:
 
@@ -38,4 +46,4 @@ Relevant economics-based junior faculty in business schools, agricultural/resour
 
 ## Maintenance
 
-The repository is intentionally minimal. Do not add weekly feed outputs or general research files here. Git history serves as the audit trail for roster changes.
+The repository is intentionally minimal. Do not add weekly feed outputs or general research files here. Git history serves as the audit trail for roster and cache changes.

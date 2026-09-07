@@ -1,0 +1,189 @@
+name: Refresh NBER cache
+
+on:
+  schedule:
+    # 09:17 UTC Monday = 05:17 EDT / 04:17 EST.
+    # The weekly ChatGPT feed runs at 08:00 America/New_York.
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-nber-cache
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # actions/checkout v7.0.1, pinned to an immutable commit SHA.
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Download official NBER metadata
+        run: |
+          set -euo pipefail
+
+          curl --fail --location --silent --show-error \
+            --retry 3 --retry-delay 5 --retry-all-errors \
+            --connect-timeout 20 --max-time 180 \
+            --user-agent "rfgong/economics-research-feed" \
+            https://data.nber.org/nber_paper_chapter_metadata/tsv/ref.tsv \
+            --output /tmp/ref.tsv
+
+          curl --fail --location --silent --show-error \
+            --retry 3 --retry-delay 5 --retry-all-errors \
+            --connect-timeout 20 --max-time 180 \
+            --user-agent "rfgong/economics-research-feed" \
+            https://data.nber.org/nber_paper_chapter_metadata/tsv/abs.tsv \
+            --output /tmp/abs.tsv
+
+      - name: Validate and build compact cache
+        run: |
+          python3 - <<'PY'
+          import csv
+          import json
+          import re
+          from datetime import datetime, timedelta
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          REF = Path("/tmp/ref.tsv")
+          ABS = Path("/tmp/abs.tsv")
+          OUT = Path("nber_recent.jsonl")
+          STATE = Path("nber_recent_state.json")
+
+          required_ref = {"paper", "author", "title", "issue_date", "doi"}
+          required_abs = {"paper", "abstract"}
+
+          abstracts = {}
+          with ABS.open("r", encoding="utf-8", newline="") as f:
+              reader = csv.DictReader(f, delimiter="\t")
+              if not reader.fieldnames or not required_abs.issubset(reader.fieldnames):
+                  raise RuntimeError(f"Unexpected abs.tsv schema: {reader.fieldnames!r}")
+              for row in reader:
+                  paper = row["paper"].strip()
+                  if paper:
+                      abstracts[paper] = row["abstract"].strip()
+
+          now_et = datetime.now(ZoneInfo("America/New_York"))
+          cutoff = now_et.date() - timedelta(days=14)
+
+          total_working_papers = 0
+          latest_issue_date = None
+          highest_paper_number = None
+          recent = []
+
+          with REF.open("r", encoding="utf-8", newline="") as f:
+              reader = csv.DictReader(f, delimiter="\t")
+              if not reader.fieldnames or not required_ref.issubset(reader.fieldnames):
+                  raise RuntimeError(f"Unexpected ref.tsv schema: {reader.fieldnames!r}")
+
+              for row in reader:
+                  paper = row["paper"].strip()
+                  match = re.fullmatch(r"w(\d+)", paper)
+                  if not match:
+                      continue
+
+                  try:
+                      issue_date = datetime.strptime(
+                          row["issue_date"].strip(), "%Y-%m-%d"
+                      ).date()
+                  except ValueError:
+                      continue
+
+                  total_working_papers += 1
+                  number = int(match.group(1))
+                  latest_issue_date = (
+                      issue_date
+                      if latest_issue_date is None
+                      else max(latest_issue_date, issue_date)
+                  )
+                  highest_paper_number = (
+                      number
+                      if highest_paper_number is None
+                      else max(highest_paper_number, number)
+                  )
+
+                  if issue_date >= cutoff:
+                      recent.append({
+                          "paper": paper,
+                          "author": row["author"].strip(),
+                          "title": row["title"].strip(),
+                          "issue_date": issue_date.isoformat(),
+                          "doi": row["doi"].strip(),
+                          "abstract": abstracts.get(paper, ""),
+                      })
+
+          # Fail safely rather than replace a good cache with a partial/error response.
+          if total_working_papers < 30000:
+              raise RuntimeError(
+                  f"Only {total_working_papers} NBER working papers found; "
+                  "refusing to replace the cache."
+              )
+          if latest_issue_date is None:
+              raise RuntimeError("No valid NBER working-paper issue dates found.")
+          if (now_et.date() - latest_issue_date).days > 30:
+              raise RuntimeError(
+                  f"Latest NBER issue date is unexpectedly old: {latest_issue_date}"
+              )
+          if not recent:
+              raise RuntimeError("No NBER working papers found in the last 14 days.")
+
+          recent.sort(
+              key=lambda x: (x["issue_date"], int(x["paper"][1:])),
+              reverse=True,
+          )
+
+          with OUT.open("w", encoding="utf-8") as f:
+              for row in recent:
+                  f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+          with_abstract = sum(bool(row["abstract"]) for row in recent)
+          state = {
+              "source_ref": "https://data.nber.org/nber_paper_chapter_metadata/tsv/ref.tsv",
+              "source_abs": "https://data.nber.org/nber_paper_chapter_metadata/tsv/abs.tsv",
+              "refreshed_date_et": now_et.date().isoformat(),
+              "window_days": 14,
+              "recent_rows": len(recent),
+              "recent_rows_with_abstract": with_abstract,
+              "latest_issue_date": latest_issue_date.isoformat(),
+              "highest_paper": f"w{highest_paper_number}",
+          }
+          STATE.write_text(
+              json.dumps(state, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          print(
+              f"Cache ready: {len(recent)} recent papers, "
+              f"{with_abstract} with abstracts, "
+              f"latest issue date {latest_issue_date}, "
+              f"highest paper w{highest_paper_number}."
+          )
+          PY
+
+      - name: Commit cache if changed
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add nber_recent.jsonl nber_recent_state.json
+
+          if git diff --cached --quiet; then
+            echo "NBER cache is already current."
+            exit 0
+          fi
+
+          git commit -m "chore: refresh NBER cache"
+          git pull --rebase origin main
+          git push origin HEAD:main
