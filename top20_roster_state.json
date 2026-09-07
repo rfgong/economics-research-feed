@@ -49,7 +49,7 @@
     "DUKE": 19
   },
   "records_total": 445,
-  "canonical_roster_path": "rosters/top20_economics_researchers.md",
+  "canonical_roster_path": "top20_economics_researchers.md",
   "notes": [
     "COMPLETE means all 20 institutions have been covered and deduplicated at institution level.",
     "Some records use an official unit faculty page as a URL fallback; resolve to a personal or individual research page when encountered.",
