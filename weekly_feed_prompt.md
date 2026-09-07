@@ -50,7 +50,7 @@ Wildcard outside fields only if authors/work are strong AND there is direct or t
 SELECTION
 Maximum 15 working papers total: Top Working Papers up to 5 ranked by expected value; Alternates up to 10. Do not pad. Deduplicate across sources and prefer the canonical version.
 
-For each: Title; Authors; Source + first-release date; Abstract (verbatim only if user-provided/public domain/license permits; otherwise concise source-faithful summary of question/method-data/main finding with no invented interpretation); Why it matters (one concise sentence).
+For each: Title; Authors; Source + first-release date; Abstract (verbatim block quote preferred; otherwise you may use multiple properly attributed quotations in a source-faithful summary of question/method-data/main finding with no invented interpretation); Why it matters (one concise sentence).
 
 WORK IN PROGRESS
 Up to 5 genuinely earlier-stage projects from tracked websites/CVs/research pages, outside the 15-paper cap. Include only if newly posted/announced/meaningfully newly described in the window, credibly active, clears the relevance threshold, and has no public manuscript. Once a manuscript appears, move it to the working-paper pool. Give title, researchers, available description without inference, evidence/stage, and one sentence on why it is worth watching. Do not pad.
