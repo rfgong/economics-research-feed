@@ -1,0 +1,10 @@
+{
+  "highest_paper": "w35724",
+  "latest_issue_date": "2026-09-04",
+  "recent_rows": 65,
+  "recent_rows_with_abstract": 65,
+  "refreshed_date_et": "2026-09-07",
+  "source_abs": "https://data.nber.org/nber_paper_chapter_metadata/tsv/abs.tsv",
+  "source_ref": "https://data.nber.org/nber_paper_chapter_metadata/tsv/ref.tsv",
+  "window_days": 14
+}
