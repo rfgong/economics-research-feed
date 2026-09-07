@@ -36,7 +36,7 @@ Resume from the first incomplete institution after any interruption. Only after 
 On ordinary runs, use the cached COMPLETE roster and only repair obvious dead URLs/redirects encountered during scanning.
 
 SOURCE COVERAGE
-NBER: use the official NBER database as discovery backbone, sort/query by release date, page as needed, cross-check official New This Week where available, and verify selected papers on individual NBER pages. If one official route fails, use alternative official NBER listing/query routes and sequential WP numbers where useful. Do not use third-party reposts/newsletters as the completeness backbone. Report an error only if complete coverage cannot reasonably be established.
+NBER: Use NBER's official machine-readable Working Paper metadata as the discovery backbone and filter by issue date to the feed window. Verify only papers selected for the final feed on their individual NBER pages. If the metadata is unavailable, fall back to the official Working Papers listing or New This Week. Report incomplete coverage only if neither official route can establish the week's releases.
 
 CEPR: use official Discussion Paper listings/RSS/date filters; verify selected papers on CEPR pages; try alternate official CEPR routes before declaring incomplete.
 
