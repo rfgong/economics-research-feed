@@ -5,8 +5,8 @@ Persistent support files for the weekly ChatGPT economics research-feed automati
 ## Files
 
 - `weekly_feed_prompt.md` — canonical automation instructions.
-- `rosters/top20_economics_researchers.md` — cached Top-20 junior-researcher roster used for researcher-site and work-in-progress scans.
-- `rosters/top20_roster_state.json` — machine-readable refresh status and checkpoint metadata.
+- `top20_economics_researchers.md` — cached Top-20 junior-researcher roster used for researcher-site and work-in-progress scans.
+- `top20_roster_state.json` — machine-readable refresh status and checkpoint metadata.
 
 ## Automation contract
 
@@ -15,8 +15,8 @@ The scheduled feed should treat this repository as the canonical persistent stor
 On ordinary weekly runs:
 
 1. Read `weekly_feed_prompt.md`.
-2. Read `rosters/top20_roster_state.json`.
-3. If the roster state is `COMPLETE`, use `rosters/top20_economics_researchers.md` for the researcher-website scan.
+2. Read `top20_roster_state.json`.
+3. If the roster state is `COMPLETE`, use `top20_economics_researchers.md` for the researcher-website scan.
 4. Repair obvious dead or redirected research URLs when encountered and persist the correction when repository writes are available.
 
 On the first weekly run in September:
