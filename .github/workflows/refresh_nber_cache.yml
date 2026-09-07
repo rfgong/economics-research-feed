@@ -63,15 +63,18 @@ jobs:
           required_ref = {"paper", "author", "title", "issue_date", "doi"}
           required_abs = {"paper", "abstract"}
 
+          def text(row, key):
+              return (row.get(key) or "").strip()
+
           abstracts = {}
           with ABS.open("r", encoding="utf-8", newline="") as f:
               reader = csv.DictReader(f, delimiter="\t")
               if not reader.fieldnames or not required_abs.issubset(reader.fieldnames):
                   raise RuntimeError(f"Unexpected abs.tsv schema: {reader.fieldnames!r}")
               for row in reader:
-                  paper = row["paper"].strip()
+                  paper = text(row, "paper")
                   if paper:
-                      abstracts[paper] = row["abstract"].strip()
+                      abstracts[paper] = text(row, "abstract")
 
           now_et = datetime.now(ZoneInfo("America/New_York"))
           cutoff = now_et.date() - timedelta(days=14)
@@ -87,14 +90,14 @@ jobs:
                   raise RuntimeError(f"Unexpected ref.tsv schema: {reader.fieldnames!r}")
 
               for row in reader:
-                  paper = row["paper"].strip()
+                  paper = text(row, "paper")
                   match = re.fullmatch(r"w(\d+)", paper)
                   if not match:
                       continue
 
                   try:
                       issue_date = datetime.strptime(
-                          row["issue_date"].strip(), "%Y-%m-%d"
+                          text(row, "issue_date"), "%Y-%m-%d"
                       ).date()
                   except ValueError:
                       continue
@@ -115,10 +118,10 @@ jobs:
                   if issue_date >= cutoff:
                       recent.append({
                           "paper": paper,
-                          "author": row["author"].strip(),
-                          "title": row["title"].strip(),
+                          "author": text(row, "author"),
+                          "title": text(row, "title"),
                           "issue_date": issue_date.isoformat(),
-                          "doi": row["doi"].strip(),
+                          "doi": text(row, "doi"),
                           "abstract": abstracts.get(paper, ""),
                       })
 
