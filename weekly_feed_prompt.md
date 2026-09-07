@@ -11,8 +11,8 @@ PRIMARY SOURCES
 
 ROSTER DATA
 The roster is external data, not part of this prompt. Before the website scan, load:
-- `rosters/top20_economics_researchers.md`
-- `rosters/top20_roster_state.json`
+- `top20_economics_researchers.md`
+- `top20_roster_state.json`
 
 Treat those files as the source of truth. Do not reconstruct a missing roster from memory or from old chat state. If the roster cannot be loaded, continue the NBER/CEPR/arXiv layers and report `ERRORS — researcher roster unavailable; website/WIP layer not run`.
 
