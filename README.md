@@ -2,48 +2,58 @@
 
 Persistent support files for the weekly ChatGPT economics research-feed automation.
 
+## Architecture
+
+The repository keeps deterministic source retrieval separate from model judgment.
+
+GitHub Actions maintains small rolling caches for NBER Working Papers and a fixed arXiv economics/methods category universe. ChatGPT handles weekly date filtering, relevance ranking, CEPR retrieval, cross-source deduplication, research summaries, and a lightweight researcher-site/WIP early-warning layer.
+
+The repository intentionally does not store weekly feed outputs or an emitted-paper ledger.
+
 ## Files
 
 - `weekly_feed_prompt.md` — canonical weekly-feed instructions.
 - `annual_roster_refresh_prompt.md` — separate annual roster-maintenance instructions.
-- `top20_economics_researchers.md` — cached Top-20 junior-researcher roster used for researcher-site and work-in-progress scans.
-- `top20_roster_state.json` — machine-readable roster refresh status.
-- `nber_recent.jsonl` — generated compact cache of recent NBER Working Paper metadata and abstracts.
-- `nber_recent_state.json` — generated NBER cache status.
-- `.github/workflows/refresh_nber_cache.yml` — refreshes the NBER cache before the Monday feed.
+- `top20_economics_researchers.md` — cached Top-20 junior-researcher roster.
+- `top20_roster_state.json` — roster refresh status.
+- `nber_recent.jsonl` — generated rolling NBER cache.
+- `nber_recent_state.json` — NBER cache status.
+- `arxiv_recent.jsonl` — generated rolling arXiv cache.
+- `arxiv_recent_state.json` — arXiv cache status.
+- `.github/workflows/refresh_nber_cache.yml` — refreshes NBER before the Monday feed.
+- `.github/workflows/refresh_arxiv_cache.yml` — refreshes arXiv before the Monday feed.
 
-## Weekly automation contract
+## Weekly window
 
-On ordinary weekly runs:
+Each Monday feed covers the immediately preceding completed Monday through Sunday calendar week in `America/New_York`.
 
-1. Read `weekly_feed_prompt.md`.
-2. Load the current NBER cache and roster files named there.
-3. Use the cached NBER file as the NBER completeness backbone.
-4. Use the cached researcher roster for the lightweight researcher-website/WIP scan.
-5. Do not rebuild or re-audit the roster during the weekly feed.
-
-If the NBER cache is missing or stale, report incomplete NBER coverage and continue the other source layers. Do not substitute direct NBER fetch routes that are known to be unreliable in the ChatGPT execution environment.
-
-If the researcher roster is unavailable, continue the NBER, CEPR, and arXiv layers and report that the researcher-website/WIP layer could not run.
+The source caches retain 14 days for resilience, but the feed filters them to the non-overlapping seven-day completed week. No emitted-ID ledger is used.
 
 ## NBER cache
 
-The GitHub Actions workflow downloads NBER's public machine-readable `ref.tsv` and `abs.tsv`, validates the response, and writes a compact 14-day cache containing Working Paper number, authors, title, issue date, DOI, and abstract.
+The NBER cache is the NBER completeness backbone because direct NBER retrieval from the ChatGPT execution environment has proved unreliable. If the cache is stale or missing, the weekly feed reports incomplete NBER coverage rather than retrying known-unreliable routes.
 
-The workflow runs early Monday before the 08:00 America/New_York feed and may also be triggered manually. A failed download or validation stops the workflow before the previous cache is overwritten.
+## arXiv cache
 
-The generated cache is source infrastructure, not a weekly feed output.
+The arXiv workflow queries the official arXiv API for:
+`econ.EM`, `econ.GN`, `econ.TH`, `stat.ME`, `stat.AP`, `q-fin.EC`, `cs.GT`.
 
-## Roster maintenance
+It stores a rolling 14-day cache with the initial-submission (`v1`) date, title, authors, categories, canonical URL, and abstract. arXiv descriptive metadata, including abstracts, is available under CC0 under the arXiv API terms.
 
-Roster maintenance is separate from the weekly feed. Use `annual_roster_refresh_prompt.md` for the annual refresh.
+## CEPR
 
-The roster covers junior permanent or tenure-track economics researchers at:
+CEPR remains model-side because its weekly Discussion Paper listing is comparatively lightweight to retrieve and does not require another cache unless reliability problems emerge.
 
-Harvard; MIT; Chicago; UC Berkeley; Stanford; Princeton; Yale; Oxford; NYU; Columbia; Toulouse/Toulouse Capitole; LSE; Penn; Northwestern; UCL; UCSD; UCLA; Brown; Michigan; Duke.
+## Researcher-site / WIP layer
 
-Relevant economics-based junior faculty in business schools, agricultural/resource economics, political science, public policy/government, and closely related units are included when their substantive research is clearly economics-based.
+The roster is an early-warning supplement, not an exhaustive weekly crawl. The feed does not re-audit roster URLs and does not claim week-to-week novelty without concrete recency evidence on the source page.
+
+Annual roster maintenance is handled separately by `annual_roster_refresh_prompt.md`.
+
+## Failure behavior
+
+A failed cache refresh does not overwrite the last known-good cache. The Monday feed checks each cache state file. If a cache is stale or missing, the feed reports that source layer as incomplete and continues with the remaining sources.
 
 ## Maintenance
 
-The repository is intentionally minimal. Do not add weekly feed outputs or general research files here. Git history serves as the audit trail for roster and cache changes.
+The repository is intentionally minimal. Do not add weekly feed outputs, emitted-ID ledgers, broad web-crawl state, or general research files here. Git history serves as the audit trail for source-cache and roster changes.

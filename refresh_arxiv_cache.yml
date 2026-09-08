@@ -1,0 +1,237 @@
+name: Refresh arXiv cache
+
+on:
+  schedule:
+    # 09:32 UTC Monday = 05:32 EDT / 04:32 EST.
+    # The weekly ChatGPT feed runs at 08:00 America/New_York.
+    - cron: "32 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-arxiv-cache
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Fetch and build compact arXiv cache
+        run: |
+          python3 - <<'PY'
+          import json
+          import time
+          import urllib.parse
+          import urllib.request
+          import xml.etree.ElementTree as ET
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          API = "https://export.arxiv.org/api/query"
+          OUT = Path("arxiv_recent.jsonl")
+          STATE = Path("arxiv_recent_state.json")
+          CATEGORIES = [
+              "econ.EM", "econ.GN", "econ.TH",
+              "stat.ME", "stat.AP", "q-fin.EC", "cs.GT",
+          ]
+
+          ET_TZ = ZoneInfo("America/New_York")
+          now_et = datetime.now(ET_TZ)
+          cutoff_date_et = now_et.date() - timedelta(days=14)
+          ns = {
+              "atom": "http://www.w3.org/2005/Atom",
+              "arxiv": "http://arxiv.org/schemas/atom",
+          }
+
+          def clean(value):
+              return " ".join((value or "").split())
+
+          def parse_time(value):
+              return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+          def fetch_page(start, max_results=200):
+              query = " OR ".join(f"cat:{cat}" for cat in CATEGORIES)
+              params = {
+                  "search_query": query,
+                  "start": start,
+                  "max_results": max_results,
+                  "sortBy": "submittedDate",
+                  "sortOrder": "descending",
+              }
+              url = API + "?" + urllib.parse.urlencode(params)
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      "User-Agent": (
+                          "rfgong/economics-research-feed "
+                          "(noncommercial academic research feed)"
+                      )
+                  },
+              )
+              error = None
+              for attempt in range(3):
+                  try:
+                      with urllib.request.urlopen(request, timeout=60) as response:
+                          return response.read()
+                  except Exception as exc:
+                      error = exc
+                      if attempt < 2:
+                          time.sleep(5 * (attempt + 1))
+              raise RuntimeError(f"arXiv API fetch failed: {error}")
+
+          recent = []
+          seen = set()
+          start = 0
+          page_size = 200
+
+          for page_index in range(20):
+              if page_index:
+                  time.sleep(3)
+
+              root = ET.fromstring(fetch_page(start, page_size))
+              entries = root.findall("atom:entry", ns)
+              if not entries:
+                  break
+
+              oldest_date_et = None
+
+              for entry in entries:
+                  id_url = clean(entry.findtext("atom:id", default="", namespaces=ns))
+                  raw_id = id_url.rsplit("/", 1)[-1]
+                  base_id = raw_id.rsplit("v", 1)[0] if "v" in raw_id else raw_id
+
+                  published_text = clean(
+                      entry.findtext("atom:published", default="", namespaces=ns)
+                  )
+                  if not published_text:
+                      continue
+                  published = parse_time(published_text)
+                  v1_date_et = published.astimezone(ET_TZ).date()
+                  oldest_date_et = (
+                      v1_date_et if oldest_date_et is None
+                      else min(oldest_date_et, v1_date_et)
+                  )
+
+                  if v1_date_et < cutoff_date_et or base_id in seen:
+                      continue
+
+                  categories = [
+                      node.attrib.get("term", "")
+                      for node in entry.findall("atom:category", ns)
+                      if node.attrib.get("term")
+                  ]
+                  if not any(cat in CATEGORIES for cat in categories):
+                      continue
+
+                  authors = [
+                      clean(node.findtext("atom:name", default="", namespaces=ns))
+                      for node in entry.findall("atom:author", ns)
+                  ]
+                  authors = [a for a in authors if a]
+                  title = clean(
+                      entry.findtext("atom:title", default="", namespaces=ns)
+                  )
+                  abstract = clean(
+                      entry.findtext("atom:summary", default="", namespaces=ns)
+                  )
+                  if not title or not abstract or not authors:
+                      continue
+
+                  updated_text = clean(
+                      entry.findtext("atom:updated", default="", namespaces=ns)
+                  )
+                  primary = entry.find("arxiv:primary_category", ns)
+
+                  recent.append({
+                      "arxiv_id": base_id,
+                      "title": title,
+                      "authors": authors,
+                      "v1_submitted_at": published.astimezone(timezone.utc)
+                          .replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+                      "v1_date_et": v1_date_et.isoformat(),
+                      "updated_at": (
+                          parse_time(updated_text).astimezone(timezone.utc)
+                          .replace(microsecond=0).isoformat().replace("+00:00", "Z")
+                          if updated_text else ""
+                      ),
+                      "primary_category": (
+                          primary.attrib.get("term", "")
+                          if primary is not None else ""
+                      ),
+                      "categories": categories,
+                      "url": f"https://arxiv.org/abs/{base_id}",
+                      "abstract": abstract,
+                  })
+                  seen.add(base_id)
+
+              if oldest_date_et is not None and oldest_date_et < cutoff_date_et:
+                  break
+              start += page_size
+          else:
+              raise RuntimeError(
+                  "Reached pagination safety limit before crossing 14-day boundary."
+              )
+
+          if not recent:
+              raise RuntimeError("No arXiv records found in the last 14 days.")
+
+          recent.sort(
+              key=lambda row: (row["v1_submitted_at"], row["arxiv_id"]),
+              reverse=True,
+          )
+          latest_v1_date_et = max(row["v1_date_et"] for row in recent)
+
+          if (
+              now_et.date()
+              - datetime.strptime(latest_v1_date_et, "%Y-%m-%d").date()
+          ).days > 10:
+              raise RuntimeError(
+                  f"Latest arXiv v1 date is unexpectedly old: {latest_v1_date_et}"
+              )
+
+          with OUT.open("w", encoding="utf-8") as f:
+              for row in recent:
+                  f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+          state = {
+              "source": API,
+              "refreshed_date_et": now_et.date().isoformat(),
+              "window_days": 14,
+              "categories": CATEGORIES,
+              "recent_rows": len(recent),
+              "latest_v1_date_et": latest_v1_date_et,
+          }
+          STATE.write_text(
+              json.dumps(state, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(
+              f"Cache ready: {len(recent)} arXiv records; "
+              f"latest v1 date {latest_v1_date_et}."
+          )
+          PY
+
+      - name: Commit cache if changed
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add arxiv_recent.jsonl arxiv_recent_state.json
+          if git diff --cached --quiet; then
+            echo "arXiv cache is already current."
+            exit 0
+          fi
+          git commit -m "chore: refresh arXiv cache"
+          git pull --rebase origin main
+          git push origin HEAD:main
