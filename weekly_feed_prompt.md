@@ -80,7 +80,7 @@ For arXiv candidates, the cached API abstract is descriptive metadata released u
 
 For NBER and CEPR, do not reproduce a full abstract verbatim in the ChatGPT response. Give a compact source-faithful summary that preserves the question, identification or method, data, and principal finding when those elements are available. Do not invent interpretation.
 
-This NBER rule is provisional pending clarification of reuse permissions for complete abstracts in the public repository.
+This NBER rule is approved for reuse permissions for complete abstracts in the public repository.
 
 WORK IN PROGRESS
 Up to 5 genuinely earlier-stage projects from the researcher-site layer, outside the 15-paper cap. Include only when credibly active, relevant, and no public manuscript is available. Give:
