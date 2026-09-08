@@ -1,0 +1,16 @@
+{
+  "categories": [
+    "econ.EM",
+    "econ.GN",
+    "econ.TH",
+    "stat.ME",
+    "stat.AP",
+    "q-fin.EC",
+    "cs.GT"
+  ],
+  "latest_v1_date_et": "2026-09-04",
+  "recent_rows": 344,
+  "refreshed_date_et": "2026-09-08",
+  "source": "https://export.arxiv.org/api/query",
+  "window_days": 14
+}
