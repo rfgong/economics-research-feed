@@ -23,7 +23,7 @@ Load from the repository:
 Treat these repository files as the source of truth. Do not reconstruct missing caches or the roster from prior chat state.
 
 NBER
-Use `nber_recent.jsonl` as the NBER completeness backbone. Use it only if `nber_recent_state.json` has `refreshed_date_et` equal to the current Monday run date. Filter `issue_date` to the completed Monday-Sunday week and screen the complete resulting batch for relevance.
+Use `nber_recent.jsonl` as the NBER completeness backbone. Use it only if `nber_recent_state.json` has `refreshed_date_et` on or after the Monday immediately following the completed week. Filter `issue_date` to the completed Monday-Sunday week and screen the complete resulting batch for relevance.
 
 Do not attempt direct NBER metadata, Working Papers listing, New This Week, or individual-paper-page fetches as recovery paths; those routes are not reliable in this execution environment.
 
@@ -37,7 +37,7 @@ ARXIV
 Use `arxiv_recent.jsonl` as the arXiv completeness backbone for:
 `econ.EM`, `econ.GN`, `econ.TH`, `stat.ME`, `stat.AP`, `q-fin.EC`, `cs.GT`.
 
-Use it only if `arxiv_recent_state.json` has `refreshed_date_et` equal to the current Monday run date. Filter `v1_date_et` to the completed Monday-Sunday week. Do not rerun broad arXiv searches during an ordinary weekly feed.
+Use it only if `arxiv_recent_state.json` has `refreshed_date_et` on or after the Monday immediately following the completed week. Filter `v1_date_et` to the completed Monday-Sunday week. Do not rerun broad arXiv searches during an ordinary weekly feed.
 
 If the arXiv cache is missing or stale, report:
 `ERRORS — arXiv coverage incomplete; canonical GitHub cache missing or stale`
@@ -64,6 +64,8 @@ SELECTION
 Maximum 15 working papers total:
 - Top Working Papers: up to 5, ranked by expected value.
 - Alternates: up to 10.
+
+Number papers continuously across both sections. If there are 5 Top Working Papers, number the Alternates starting at 6; if fewer than 5 Top Working Papers are selected, continue from the next integer.
 
 Do not pad. Deduplicate across sources and prefer the earliest/canonical public version.
 
