@@ -17,7 +17,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository
@@ -69,48 +69,46 @@ jobs:
           import urllib.request
           import xml.etree.ElementTree as ET
           from datetime import datetime, timedelta, timezone
+          from email.utils import parsedate_to_datetime
           from pathlib import Path
           from zoneinfo import ZoneInfo
 
-          API = "https://export.arxiv.org/api/query"
+          API = "https://oaipmh.arxiv.org/oai"
           OUT = Path("arxiv_recent.jsonl")
           STATE = Path("arxiv_recent_state.json")
-          CATEGORIES = [
+
+          TARGET_CATEGORIES = {
               "econ.EM", "econ.GN", "econ.TH",
               "stat.ME", "stat.AP", "q-fin.EC", "cs.GT",
-          ]
+          }
+          TOP_LEVEL_SETS = ["econ", "stat", "q-fin", "cs"]
+
+          OAI_NS = "http://www.openarchives.org/OAI/2.0/"
+          RAW_NS = "http://arxiv.org/OAI/arXivRaw/"
+          NS = {"oai": OAI_NS, "raw": RAW_NS}
 
           ET_TZ = ZoneInfo("America/New_York")
           now_et = datetime.now(ET_TZ)
           cutoff_date_et = now_et.date() - timedelta(days=14)
-          ns = {
-              "atom": "http://www.w3.org/2005/Atom",
-              "arxiv": "http://arxiv.org/schemas/atom",
-          }
+
+          # Harvest a slightly wider OAI update window, then enforce the exact
+          # cache window using each paper's arXivRaw v1 date below.
+          harvest_from = cutoff_date_et - timedelta(days=2)
+          harvest_until = now_et.date()
 
           def clean(value):
               return " ".join((value or "").split())
 
-          def parse_time(value):
-              return datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-          def fetch_page(start, max_results=200):
-              query = " OR ".join(f"cat:{cat}" for cat in CATEGORIES)
-              params = {
-                  "search_query": query,
-                  "start": start,
-                  "max_results": max_results,
-                  "sortBy": "submittedDate",
-                  "sortOrder": "descending",
-              }
+          def fetch_xml(params):
               url = API + "?" + urllib.parse.urlencode(params)
               request = urllib.request.Request(
                   url,
                   headers={
                       "User-Agent": (
                           "rfgong/economics-research-feed "
-                          "(noncommercial academic research feed)"
-                      )
+                          "(noncommercial academic metadata harvest)"
+                      ),
+                      "Accept": "application/xml,text/xml;q=0.9,*/*;q=0.1",
                   },
               )
 
@@ -119,7 +117,7 @@ jobs:
 
               for attempt in range(len(retry_delays) + 1):
                   try:
-                      with urllib.request.urlopen(request, timeout=60) as response:
+                      with urllib.request.urlopen(request, timeout=90) as response:
                           return response.read()
                   except Exception as exc:
                       error = exc
@@ -136,115 +134,135 @@ jobs:
                                   pass
 
                       print(
-                          f"arXiv fetch attempt {attempt + 1} failed: "
+                          f"arXiv OAI fetch attempt {attempt + 1} failed: "
                           f"{exc}; retrying in {delay}s."
                       )
                       time.sleep(delay)
 
-              raise RuntimeError(f"arXiv API fetch failed: {error}")
+              raise RuntimeError(f"arXiv OAI-PMH fetch failed: {error}")
 
-          recent = []
-          seen = set()
-          start = 0
-          page_size = 200
+          def parse_v1_date(raw):
+              versions = raw.findall("raw:version", NS)
+              for version in versions:
+                  if version.attrib.get("version") == "v1":
+                      date_text = clean(version.findtext("raw:date", default="", namespaces=NS))
+                      if not date_text:
+                          return None
+                      dt = parsedate_to_datetime(date_text)
+                      if dt.tzinfo is None:
+                          dt = dt.replace(tzinfo=timezone.utc)
+                      return dt.astimezone(ET_TZ)
+              return None
 
-          for page_index in range(20):
-              if page_index:
-                  time.sleep(3)
+          def parse_record(record):
+              header = record.find("oai:header", NS)
+              if header is None or header.attrib.get("status") == "deleted":
+                  return None
 
-              root = ET.fromstring(fetch_page(start, page_size))
-              entries = root.findall("atom:entry", ns)
-              if not entries:
-                  break
+              raw = record.find("oai:metadata/raw:arXivRaw", NS)
+              if raw is None:
+                  return None
 
-              oldest_date_et = None
-
-              for entry in entries:
-                  id_url = clean(entry.findtext("atom:id", default="", namespaces=ns))
-                  raw_id = id_url.rsplit("/", 1)[-1]
-                  base_id = raw_id.rsplit("v", 1)[0] if "v" in raw_id else raw_id
-
-                  published_text = clean(
-                      entry.findtext("atom:published", default="", namespaces=ns)
-                  )
-                  if not published_text:
-                      continue
-                  published = parse_time(published_text)
-                  v1_date_et = published.astimezone(ET_TZ).date()
-                  oldest_date_et = (
-                      v1_date_et if oldest_date_et is None
-                      else min(oldest_date_et, v1_date_et)
-                  )
-
-                  if v1_date_et < cutoff_date_et or base_id in seen:
-                      continue
-
-                  categories = [
-                      node.attrib.get("term", "")
-                      for node in entry.findall("atom:category", ns)
-                      if node.attrib.get("term")
-                  ]
-                  if not any(cat in CATEGORIES for cat in categories):
-                      continue
-
-                  authors = [
-                      clean(node.findtext("atom:name", default="", namespaces=ns))
-                      for node in entry.findall("atom:author", ns)
-                  ]
-                  authors = [a for a in authors if a]
-                  title = clean(
-                      entry.findtext("atom:title", default="", namespaces=ns)
-                  )
-                  abstract = clean(
-                      entry.findtext("atom:summary", default="", namespaces=ns)
-                  )
-                  if not title or not abstract or not authors:
-                      continue
-
-                  updated_text = clean(
-                      entry.findtext("atom:updated", default="", namespaces=ns)
-                  )
-                  primary = entry.find("arxiv:primary_category", ns)
-
-                  recent.append({
-                      "arxiv_id": base_id,
-                      "title": title,
-                      "authors": authors,
-                      "v1_submitted_at": published.astimezone(timezone.utc)
-                          .replace(microsecond=0).isoformat().replace("+00:00", "Z"),
-                      "v1_date_et": v1_date_et.isoformat(),
-                      "updated_at": (
-                          parse_time(updated_text).astimezone(timezone.utc)
-                          .replace(microsecond=0).isoformat().replace("+00:00", "Z")
-                          if updated_text else ""
-                      ),
-                      "primary_category": (
-                          primary.attrib.get("term", "")
-                          if primary is not None else ""
-                      ),
-                      "categories": categories,
-                      "url": f"https://arxiv.org/abs/{base_id}",
-                      "abstract": abstract,
-                  })
-                  seen.add(base_id)
-
-              if oldest_date_et is not None and oldest_date_et < cutoff_date_et:
-                  break
-              start += page_size
-          else:
-              raise RuntimeError(
-                  "Reached pagination safety limit before crossing 14-day boundary."
+              arxiv_id = clean(raw.findtext("raw:id", default="", namespaces=NS))
+              title = clean(raw.findtext("raw:title", default="", namespaces=NS))
+              abstract = clean(raw.findtext("raw:abstract", default="", namespaces=NS))
+              authors_text = clean(raw.findtext("raw:authors", default="", namespaces=NS))
+              categories_text = clean(
+                  raw.findtext("raw:categories", default="", namespaces=NS)
               )
 
+              if not arxiv_id or not title or not abstract or not authors_text:
+                  return None
+
+              categories = categories_text.split()
+              if not TARGET_CATEGORIES.intersection(categories):
+                  return None
+
+              v1_dt = parse_v1_date(raw)
+              if v1_dt is None or v1_dt.date() < cutoff_date_et:
+                  return None
+
+              authors = [a.strip() for a in authors_text.split(",") if a.strip()]
+
+              return {
+                  "arxiv_id": arxiv_id,
+                  "title": title,
+                  "authors": authors,
+                  "v1_submitted_at": (
+                      v1_dt.astimezone(timezone.utc)
+                      .replace(microsecond=0)
+                      .isoformat()
+                      .replace("+00:00", "Z")
+                  ),
+                  "v1_date_et": v1_dt.date().isoformat(),
+                  "updated_at": "",
+                  "primary_category": categories[0] if categories else "",
+                  "categories": categories,
+                  "url": f"https://arxiv.org/abs/{arxiv_id}",
+                  "abstract": abstract,
+              }
+
+          rows_by_id = {}
+
+          for set_spec in TOP_LEVEL_SETS:
+              params = {
+                  "verb": "ListRecords",
+                  "metadataPrefix": "arXivRaw",
+                  "set": set_spec,
+                  "from": harvest_from.isoformat(),
+                  "until": harvest_until.isoformat(),
+              }
+
+              while True:
+                  root = ET.fromstring(fetch_xml(params))
+
+                  error_node = root.find("oai:error", NS)
+                  if error_node is not None:
+                      code = error_node.attrib.get("code", "")
+                      message = clean(error_node.text)
+                      if code == "noRecordsMatch":
+                          break
+                      raise RuntimeError(
+                          f"arXiv OAI-PMH error for set {set_spec}: "
+                          f"{code}: {message}"
+                      )
+
+                  for record in root.findall(".//oai:record", NS):
+                      row = parse_record(record)
+                      if row is not None:
+                          rows_by_id[row["arxiv_id"]] = row
+
+                  token_node = root.find(
+                      ".//oai:resumptionToken", NS
+                  )
+                  token = clean(token_node.text) if token_node is not None else ""
+                  if not token:
+                      break
+
+                  # OAI-PMH resumption-token requests contain only verb + token.
+                  time.sleep(5)
+                  params = {
+                      "verb": "ListRecords",
+                      "resumptionToken": token,
+                  }
+
+              # Be polite between top-level archive sets.
+              time.sleep(5)
+
+          recent = list(rows_by_id.values())
           if not recent:
-              raise RuntimeError("No arXiv records found in the last 14 days.")
+              raise RuntimeError(
+                  "No matching arXiv records found in the recent OAI-PMH window."
+              )
 
           recent.sort(
               key=lambda row: (row["v1_submitted_at"], row["arxiv_id"]),
               reverse=True,
           )
+
           latest_v1_date_et = max(row["v1_date_et"] for row in recent)
 
+          # Fail safely rather than overwrite a good cache with obviously stale data.
           if (
               now_et.date()
               - datetime.strptime(latest_v1_date_et, "%Y-%m-%d").date()
@@ -261,7 +279,7 @@ jobs:
               "source": API,
               "refreshed_date_et": now_et.date().isoformat(),
               "window_days": 14,
-              "categories": CATEGORIES,
+              "categories": sorted(TARGET_CATEGORIES),
               "recent_rows": len(recent),
               "latest_v1_date_et": latest_v1_date_et,
           }
@@ -269,8 +287,9 @@ jobs:
               json.dumps(state, indent=2, sort_keys=True) + "\n",
               encoding="utf-8",
           )
+
           print(
-              f"Cache ready: {len(recent)} arXiv records; "
+              f"Cache ready: {len(recent)} arXiv records via OAI-PMH; "
               f"latest v1 date {latest_v1_date_et}."
           )
           PY
