@@ -8,9 +8,9 @@
     "stat.AP",
     "stat.ME"
   ],
-  "latest_v1_date_et": "2026-09-15",
-  "recent_rows": 499,
-  "refreshed_date_et": "2026-09-16",
+  "latest_v1_date_et": "2026-09-18",
+  "recent_rows": 537,
+  "refreshed_date_et": "2026-09-21",
   "source": "https://oaipmh.arxiv.org/oai",
   "window_days": 14
 }
