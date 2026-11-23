@@ -1,9 +1,9 @@
 {
-  "highest_paper": "w36036",
-  "latest_issue_date": "2026-11-13",
-  "recent_rows": 53,
-  "recent_rows_with_abstract": 53,
-  "refreshed_date_et": "2026-11-16",
+  "highest_paper": "w36060",
+  "latest_issue_date": "2026-11-20",
+  "recent_rows": 54,
+  "recent_rows_with_abstract": 54,
+  "refreshed_date_et": "2026-11-23",
   "source_abs": "https://data.nber.org/nber_paper_chapter_metadata/tsv/abs.tsv",
   "source_ref": "https://data.nber.org/nber_paper_chapter_metadata/tsv/ref.tsv",
   "window_days": 14
